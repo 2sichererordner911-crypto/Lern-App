@@ -1547,7 +1547,7 @@ function set(){
 
   if(STAB=="admin"){
     if(!isAdmin()){
-      h+=`<h2>Administration</h2><div class="card"><b>Kein Zugriff</b><span>Dieser Bereich ist nur für dich (${esc(ADMIN_USERS.join(", "))}) freigeschaltet.</span></div>`;
+      h+=`<h2>Administration</h2><div class="card"><b>Kein Zugriff</b><span>Dieser Bereich ist nur für (${esc(ADMIN_USERS.join(", "))}) freigeschaltet.</span></div>`;
       return h;
     }
     h+=`<h2>Konten verwalten</h2>${ACC.length?ACC.map(a=>`<div class="wv"><b>${esc(a.u)}</b><button class="btn2 sm" onclick="delAcc('${a.u}')">${AC==a.u?"Wirklich löschen":"Löschen"}</button></div>`).join(""):`<p class="sub">Noch keine Konten.</p>`}
