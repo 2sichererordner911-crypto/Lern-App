@@ -1595,9 +1595,7 @@ function render(){const m=$("#app");
 
 function home(){
  return `<h1>Lern-App</h1><p class="sub">Deine Fächer</p>
-<button class="item" onclick="go('sp')"><b>Spanisch</b></button>
-${S.f.map((f,i)=>`<button class="item" onclick="go('fach',${i})"><b>${esc(f.n)}</b></button>`).join("")}
-<div class="row" style="margin-top:16px"><input id="nf" placeholder="Neues Fach"><button class="btn" onclick="addF()" style="flex:none;margin:0">Hinzufügen</button></div>`}
+<button class="item" onclick="go('sp')"><b>Spanisch</b></button>`}
 function sp(){let t=0,a=0,b=0;U.forEach(u=>u.x.forEach(x=>{t+=x.l.length;a+=cnt(x,"sd");b+=cnt(x,"ds")}));
  return `<button class="back" onclick="go('home')">‹ Fächer</button><h1>Spanisch</h1>
 <div style="margin-top:12px"><button class="item" onclick="go('es')"><div><b>Vokabeltrainer</b><span class="m">Vokabeln nach Unidad und Texto</span>${pr(a,b,t,1)}</div></button><button class="item" onclick="go('ss')"><div><b>Satzschreibtrainer</b><span class="m">Sätze nach Unidad und Texto</span></div></button></div>`}
