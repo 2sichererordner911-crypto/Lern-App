@@ -1326,15 +1326,18 @@ function fixS(){S.k=S.k||{};S.f=S.f||[];S.r=S.r||{};S.w=S.w||{};S.sr=S.sr||{};fo
 const pr=(a,b,t,w)=>`<div class="pr"><span><i>S→D</i> ${a} von ${t}${w?" gelernt":""} · ${pt(a,t)} %</span><span><i>D→S</i> ${b} von ${t}${w?" gelernt":""} · ${pt(b,t)} %</span></div>`;
 const find=id=>{let r;U.forEach(u=>u.x.forEach(x=>{if(x.id==id)r=x}));return r};
 
-const ACC=(()=>{try{const a=JSON.parse(document.getElementById("acc").textContent);return Array.isArray(a)?a:[]}catch(e){return[]}})();
+let ACCREADY=0,ACC=(()=>{try{const a=JSON.parse(document.getElementById("acc").textContent);return Array.isArray(a)?a:[]}catch(e){return[]}})();
 const MK="lernapp-mode",FK="lernapp-flash";
 let S={k:{},f:[],t:0},V={p:"home"},T=null,DC=0,P={m:"k",d:0},ref=null,tm=null,M=null,CU=null,CHK=0,LM="",AM="",AE=0,AC="",LU="";
 const lsKey=()=>M&&M.k=="acc"?LS+":u:"+M.u:LS;
 function loadS(){S={k:{},f:[],t:0};try{const r=localStorage.getItem(lsKey());if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}fixS()}
-try{const m=localStorage.getItem(MK)||"";
+function restore(){try{const m=localStorage.getItem(MK)||"";
  if(m.indexOf("acc:")==0){const q=m.split(":"),a=ACC.find(x=>x.u==q[1]&&x.h.slice(0,16)==q[2]);if(a)M={k:"acc",u:a.u}}
  else if(m=="claude")M={k:"claude"};
  const f=localStorage.getItem(FK);if(f){AM=f;AE=0;localStorage.removeItem(FK)}}catch(e){}
+ loadS()}
+async function loadAcc(){try{const r=await fetch("konten.json",{cache:"no-store"});if(r.ok){const a=await r.json();if(Array.isArray(a))ACC=a}}catch(e){}
+ ACCREADY=1;restore();render()}
 loadS();
 function save(){S.t=Date.now();try{localStorage.setItem(lsKey(),JSON.stringify(S))}catch(e){}
  clearTimeout(tm);if(ref&&M&&M.k=="claude")tm=setTimeout(()=>{ref.set({s:JSON.stringify(S)}).catch(()=>{})},800)}
@@ -1378,7 +1381,7 @@ async function genAcc(){const u=un($("#gu").value),p=$("#gp").value;GM="";GJ="";
  if(!GM){try{const s=b64e(crypto.getRandomValues(new Uint8Array(16))),i=150000,h=await hashPw(p,s,i);GJ=JSON.stringify(ACC.concat([{u,s,i,h}]));GM="Eintrag für „"+u+"“ erzeugt.";GE=0}catch(e){GM="Das geht in diesem Browser leider nicht."}}
  render()}
 function copyGj(){const t=$("#gj");try{navigator.clipboard.writeText(t.value);GM="Kopiert.";GE=0}catch(e){t.select();GM="Text markiert, jetzt kopieren."}render()}
-const genBox=()=>`<div class="login"><input id="gu" placeholder="Neuer Benutzername" autocapitalize="off" autocorrect="off"><input id="gp" type="text" placeholder="Passwort (mind. 6 Zeichen)" autocapitalize="off" autocorrect="off"><button class="lnk" onclick="genPw2()">Passwort erzeugen</button><button class="btn" onclick="genAcc()">Konto-Eintrag erzeugen</button></div>${GM?`<p class="${GE?"bad":"ok"}">${esc(GM)}</p>`:""}${GJ?`<textarea id="gj" rows="4" readonly onclick="this.select()">${esc(GJ)}</textarea><button class="btn2" onclick="copyGj()">Kopieren</button><p class="sub">So wird das Konto aktiv: Öffne auf GitHub die Datei index.html (Stift-Symbol), suche die Zeile mit id="acc" und ersetze den Text zwischen den Tags <b>&lt;script type="application/json" id="acc"&gt;</b> und <b>&lt;/script&gt;</b> durch den Text oben. Dann speichern (Commit changes). Nach ein bis zwei Minuten ist das Konto da. Gib Benutzername und Passwort an die Person weiter.</p>`:""}`;
+const genBox=()=>`<div class="login"><input id="gu" placeholder="Neuer Benutzername" autocapitalize="off" autocorrect="off"><input id="gp" type="text" placeholder="Passwort (mind. 6 Zeichen)" autocapitalize="off" autocorrect="off"><button class="lnk" onclick="genPw2()">Passwort erzeugen</button><button class="btn" onclick="genAcc()">Konto-Eintrag erzeugen</button></div>${GM?`<p class="${GE?"bad":"ok"}">${esc(GM)}</p>`:""}${GJ?`<textarea id="gj" rows="4" readonly onclick="this.select()">${esc(GJ)}</textarea><button class="btn2" onclick="copyGj()">Kopieren</button><p class="sub">So wird das Konto aktiv: Öffne auf GitHub die Datei <b>konten.json</b> (Stift-Symbol), ersetze den kompletten Inhalt durch den Text oben und speichere mit „Commit changes“. Nach ein bis zwei Minuten ist das Konto da. Gib Benutzername und Passwort an die Person weiter.</p>`:""}`;
 function docHTML(list){const css=document.getElementById("css").textContent,js=document.getElementById("mainjs").textContent;
  return "<!DOCTYPE html>\n<html lang=\"de\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n<title>Lern-App</title>\n<style id=\"css\">"+css+"</style>\n</head>\n<body>\n<main id=\"app\"></main>\n<nav id=\"tb\"></nav>\n<script type=\"application/json\" id=\"acc\">"+JSON.stringify(list).replace(/</g,"\\u003c")+"<\/script>\n<script id=\"mainjs\">"+js+"<\/script>\n</body>\n</html>\n"}
 async function pubAcc(list,okMsg){let art=null;try{art=await claude.use("artifact")}catch(e){}
@@ -1399,7 +1402,8 @@ function genPw(){const c="abcdefghjkmnpqrstuvwxyz23456789";let p="";crypto.getRa
 
 const note=()=>AM?`<p class="${AE?"bad":"ok"}">${esc(AM)}</p>`:"";
 const lf=()=>`<div class="login"><input id="lu" value="${esc(LU)}" placeholder="Benutzername" autocomplete="username" autocapitalize="off" autocorrect="off"><input id="lp" type="password" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key=='Enter')login()"><button class="btn" onclick="login()">Anmelden</button>${LM?`<p class="bad">${esc(LM)}</p>`:""}</div>`;
-function gate(){return `<h1>Lern-App</h1><p class="sub">Bitte melde dich mit Benutzername und Passwort an.</p>${lf()}${HAS?`<p class="sub sp">${CHK?(ACC.length?"":"Es gibt noch keine Konten. Der Inhaber legt sie unter Einstellungen an. "):"Claude-Anmeldung wird geprüft … "}Mit Claude-Konto wirst du automatisch erkannt.</p>`:ACC.length?"":`<h2>Noch keine Konten</h2><p class="sub">Erzeuge hier den ersten Konto-Eintrag und trage ihn in die Datei index.html ein.</p>${genBox()}`}`}
+function gate(){if(!ACCREADY)return `<h1>Lern-App</h1><p class="sub">Wird geladen …</p>`;
+ return `<h1>Lern-App</h1><p class="sub">Bitte melde dich mit Benutzername und Passwort an.</p>${lf()}${HAS?"":ACC.length?"":`<h2>Noch keine Konten</h2><p class="sub">Erzeuge hier den ersten Konto-Eintrag und trage ihn in die Datei konten.json ein.</p>${genBox()}`}`}
 function set(){const cl=M.k=="claude";
  let h=`<h1>Einstellungen</h1><h2>Anmeldung</h2><div class="card"><b>${cl?"Claude-Konto":"Konto „"+esc(M.u)+"“"}</b><span>${cl?"Fortschritt in deinem Claude-Konto":"Fortschritt nur in diesem Browser"}</span></div>`;
  if(!cl)h+=`<button class="btn2" onclick="logout()">Abmelden</button>`;
@@ -1702,6 +1706,7 @@ function sx(){const x=Q.x,n=Q.q.length,z=Q.z;
  return h+`<button class="btn2" onclick="go('ss')">Abbrechen</button>`}
 
 render();
+loadAcc();
 </script>
 </body>
 </html>
