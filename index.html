@@ -52,6 +52,8 @@ details{margin:26px 0}summary{cursor:pointer;color:var(--mu)}
 <main id="app"></main>
 <nav id="tb"></nav>
 <script type="application/json" id="acc">[]</script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script id="mainjs">
 <script id="mainjs">
 const U=[
 {n:"Einstieg",x:[{n:"Hablamos español",p:8,w:`¡Hablamos (español)!|Wir sprechen (Spanisch)!
@@ -1326,94 +1328,163 @@ function fixS(){S.k=S.k||{};S.f=S.f||[];S.r=S.r||{};S.w=S.w||{};S.sr=S.sr||{};fo
 const pr=(a,b,t,w)=>`<div class="pr"><span><i>S→D</i> ${a} von ${t}${w?" gelernt":""} · ${pt(a,t)} %</span><span><i>D→S</i> ${b} von ${t}${w?" gelernt":""} · ${pt(b,t)} %</span></div>`;
 const find=id=>{let r;U.forEach(u=>u.x.forEach(x=>{if(x.id==id)r=x}));return r};
 
-let ACCREADY=0,ACC=(()=>{try{const a=JSON.parse(document.getElementById("acc").textContent);return Array.isArray(a)?a:[]}catch(e){return[]}})();
-const MK="lernapp-mode",FK="lernapp-flash";
-let S={k:{},f:[],t:0},V={p:"home"},T=null,DC=0,P={m:"k",d:0},ref=null,tm=null,M=null,CU=null,CHK=0,LM="",AM="",AE=0,AC="",LU="";
+// --- HIER DEINE SUPABASE-DATEN EINTRAGEN ---
+const SUPABASE_URL = "https://DEIN-PROJEKT.supabase.co";
+const SUPABASE_KEY = "DEIN_SUPABASE_ANON_PUBLIC_KEY";
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let ACCREADY=0,ACC=[];
+const MK="lernapp-mode";
+let S={k:{},f:[],t:0},V={p:"home"},T=null,DC=0,P={m:"k",d:0},tm=null,M=null,LM="",AM="",AE=0,AC="",LU="";
 const lsKey=()=>M&&M.k=="acc"?LS+":u:"+M.u:LS;
-function loadS(){S={k:{},f:[],t:0};try{const r=localStorage.getItem(lsKey());if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}fixS()}
-function restore(){try{const m=localStorage.getItem(MK)||"";
- if(m.indexOf("acc:")==0){const q=m.split(":"),a=ACC.find(x=>x.u==q[1]&&x.h.slice(0,16)==q[2]);if(a)M={k:"acc",u:a.u}}
- else if(m=="claude")M={k:"claude"};
- const f=localStorage.getItem(FK);if(f){AM=f;AE=0;localStorage.removeItem(FK)}}catch(e){}
- loadS()}
-async function loadAcc(){try{const r=await fetch("konten.json",{cache:"no-store"});if(r.ok){const a=await r.json();if(Array.isArray(a))ACC=a}}catch(e){}
- ACCREADY=1;restore();render()}
+
+function loadS(){
+  S={k:{},f:[],t:0};
+  try{const r=localStorage.getItem(lsKey());if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
+  fixS();
+}
+
+function restore(){
+  try{
+    const m=localStorage.getItem(MK)||"";
+    if(m.indexOf("acc:")==0){
+      const q=m.split(":"),a=ACC.find(x=>x.u==q[1]&&x.h.slice(0,16)==q[2]);
+      if(a)M={k:"acc",u:a.u};
+    }
+  }catch(e){}
+  loadS();
+  if(M&&M.k=="acc")initDb();
+}
+
+async function loadAcc(){
+  try{
+    const {data,error}=await sb.from("konten").select("u,s,i,h").order("created_at",{ascending:true});
+    if(!error&&Array.isArray(data))ACC=data;
+  }catch(e){}
+  ACCREADY=1;restore();render();
+}
 loadS();
-function save(){S.t=Date.now();try{localStorage.setItem(lsKey(),JSON.stringify(S))}catch(e){}
- clearTimeout(tm);if(ref&&M&&M.k=="claude")tm=setTimeout(()=>{ref.set({s:JSON.stringify(S)}).catch(()=>{})},800)}
-async function initDb(){try{
- const db=await claude.use("db");if(!db||!CU||!CU.id)return;
- const id=await CU.id();if(!id||!M||M.k!="claude")return;
- const rf=db.doc("data/users/"+id+"/lernapp"),s=await rf.get();if(!M||M.k!="claude")return;ref=rf;
- if(s.exists){const r=JSON.parse(s.data().s);
-  if(r.t>S.t){S=Object.assign({k:{},f:[],t:0},r);fixS();try{localStorage.setItem(lsKey(),JSON.stringify(S))}catch(e){}render()}
-  else if(r.t<S.t)ref.set({s:JSON.stringify(S)}).catch(()=>{})}
- else if(S.t)ref.set({s:JSON.stringify(S)}).catch(()=>{})
-}catch(e){}}
-async function initClaude(){await 0;try{CU=(await claude.use("user"))||null}catch(e){CU=null}CHK=1;
- if(CU){if(!M){M={k:"claude"};try{localStorage.setItem(MK,"claude")}catch(e){}loadS()}if(M.k=="claude")await initDb()}
- else if(M&&M.k=="claude"){M=null;try{localStorage.removeItem(MK)}catch(e){}loadS()}
- render()}
-initClaude();
-function setMode(m){M=m;ref=null;
- try{if(m.k=="acc"){const a=ACC.find(x=>x.u==m.u);localStorage.setItem(MK,"acc:"+a.u+":"+a.h.slice(0,16))}else localStorage.setItem(MK,"claude")}catch(e){}
- loadS();T=null;Q=null;V={p:"home"};LM="";AM="";if(m.k=="claude")initDb();render();scrollTo(0,0)}
+
+function save(){
+  S.t=Date.now();
+  try{localStorage.setItem(lsKey(),JSON.stringify(S))}catch(e){}
+  clearTimeout(tm);
+  if(M&&M.k=="acc"){
+    const u=M.u;
+    tm=setTimeout(()=>{
+      sb.from("konten").update({state:S}).eq("u",u).then(()=>{});
+    },600);
+  }
+}
+
+async function initDb(){
+  if(!M||M.k!="acc")return;
+  const u=M.u;
+  try{
+    const {data,error}=await sb.from("konten").select("state").eq("u",u).single();
+    if(error||!data||!M||M.u!=u)return;
+    const r=data.state||{};
+    if((r.t||0)>S.t){
+      S=Object.assign({k:{},f:[],t:0},r);
+      fixS();
+      try{localStorage.setItem(lsKey(),JSON.stringify(S))}catch(e){}
+      render();
+    }else if(S.t>(r.t||0)){
+      await sb.from("konten").update({state:S}).eq("u",u);
+    }
+  }catch(e){}
+}
+
+function setMode(m){
+  M=m;
+  try{
+    if(m&&m.k=="acc"){
+      const a=ACC.find(x=>x.u==m.u);
+      localStorage.setItem(MK,"acc:"+a.u+":"+a.h.slice(0,16));
+    }
+  }catch(e){}
+  loadS();T=null;Q=null;V={p:"home"};LM="";AM="";
+  if(m&&m.k=="acc")initDb();
+  render();scrollTo(0,0);
+}
 
 const b64e=u=>btoa(String.fromCharCode(...u)),b64d=s=>Uint8Array.from(atob(s),c=>c.charCodeAt(0));
-async function hashPw(pw,salt,it){const k=await crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveBits"]);
- return b64e(new Uint8Array(await crypto.subtle.deriveBits({name:"PBKDF2",salt:b64d(salt),iterations:it,hash:"SHA-256"},k,256)))}
+async function hashPw(pw,salt,it){
+  const k=await crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveBits"]);
+  return b64e(new Uint8Array(await crypto.subtle.deriveBits({name:"PBKDF2",salt:b64d(salt),iterations:it,hash:"SHA-256"},k,256)));
+}
 const un=s=>String(s||"").trim().toLowerCase();
-async function login(){const u=un($("#lu").value),p=$("#lp").value;LU=u;
- const a=ACC.find(x=>x.u==u);let ok=false;
- if(a&&p){try{ok=(await hashPw(p,a.s,a.i))==a.h}catch(e){LM="Die Anmeldung geht in diesem Browser leider nicht.";render();return}}
- if(!ok){LM="Benutzername oder Passwort stimmt nicht.";render();return}
- setMode({k:"acc",u:a.u})}
-function logout(){try{localStorage.removeItem(MK)}catch(e){}ref=null;
- if(CU)setMode({k:"claude"});else{M=null;loadS();Q=null;T=null;V={p:"home"};LM="";render()}}
-const canAdmin=()=>{try{return!!(CU&&CU.canEdit&&CU.canEdit())}catch(e){return false}};
-const HAS=typeof claude!=="undefined";
-let GM="",GE=0,GJ="";
-function genPw2(){const c="abcdefghjkmnpqrstuvwxyz23456789";let p="";crypto.getRandomValues(new Uint8Array(10)).forEach(v=>{p+=c[v%c.length]});$("#gp").value=p}
-async function genAcc(){const u=un($("#gu").value),p=$("#gp").value;GM="";GJ="";GE=1;
- if(!/^[a-z0-9._-]{2,20}$/.test(u))GM="Benutzername: 2 bis 20 Zeichen aus Buchstaben, Zahlen, Punkt, Strich oder Unterstrich, ohne Umlaute.";
- else if(p.length<6)GM="Das Passwort braucht mindestens 6 Zeichen.";
- else if(ACC.some(a=>a.u==u))GM="Diesen Benutzernamen gibt es schon.";
- if(!GM){try{const s=b64e(crypto.getRandomValues(new Uint8Array(16))),i=150000,h=await hashPw(p,s,i);GJ=JSON.stringify(ACC.concat([{u,s,i,h}]));GM="Eintrag für „"+u+"“ erzeugt.";GE=0}catch(e){GM="Das geht in diesem Browser leider nicht."}}
- render()}
-function copyGj(){const t=$("#gj");try{navigator.clipboard.writeText(t.value);GM="Kopiert.";GE=0}catch(e){t.select();GM="Text markiert, jetzt kopieren."}render()}
-const genBox=()=>`<div class="login"><input id="gu" placeholder="Neuer Benutzername" autocapitalize="off" autocorrect="off"><input id="gp" type="text" placeholder="Passwort (mind. 6 Zeichen)" autocapitalize="off" autocorrect="off"><button class="lnk" onclick="genPw2()">Passwort erzeugen</button><button class="btn" onclick="genAcc()">Konto-Eintrag erzeugen</button></div>${GM?`<p class="${GE?"bad":"ok"}">${esc(GM)}</p>`:""}${GJ?`<textarea id="gj" rows="4" readonly onclick="this.select()">${esc(GJ)}</textarea><button class="btn2" onclick="copyGj()">Kopieren</button><p class="sub">So wird das Konto aktiv: Öffne auf GitHub die Datei <b>konten.json</b> (Stift-Symbol), ersetze den kompletten Inhalt durch den Text oben und speichere mit „Commit changes“. Nach ein bis zwei Minuten ist das Konto da. Gib Benutzername und Passwort an die Person weiter.</p>`:""}`;
-function docHTML(list){const css=document.getElementById("css").textContent,js=document.getElementById("mainjs").textContent;
- return "<!DOCTYPE html>\n<html lang=\"de\">\n<head>\n<meta charset=\"utf-8\">\n<meta name=\"viewport\" content=\"width=device-width, initial-scale=1, viewport-fit=cover\">\n<title>Lern-App</title>\n<style id=\"css\">"+css+"</style>\n</head>\n<body>\n<main id=\"app\"></main>\n<nav id=\"tb\"></nav>\n<script type=\"application/json\" id=\"acc\">"+JSON.stringify(list).replace(/</g,"\\u003c")+"<\/script>\n<script id=\"mainjs\">"+js+"<\/script>\n</body>\n</html>\n"}
-async function pubAcc(list,okMsg){let art=null;try{art=await claude.use("artifact")}catch(e){}
- if(!art){AM="Speichern ist hier nicht möglich. Öffne die Seite mit dem Claude-Konto des Inhabers.";AE=1;render();return}
- try{localStorage.setItem(FK,okMsg);await art.publish(docHTML(list))}
- catch(e){try{localStorage.removeItem(FK)}catch(_){}AM="Das Speichern hat nicht geklappt ("+((e&&(e.code||e.message))||"unbekannter Fehler")+").";AE=1;render()}}
-async function addAcc(){const u=un($("#nu").value),p=$("#np").value;AM="";AE=1;
- if(!/^[a-z0-9._-]{2,20}$/.test(u))AM="Benutzername: 2 bis 20 Zeichen aus Buchstaben, Zahlen, Punkt, Strich oder Unterstrich, ohne Umlaute.";
- else if(p.length<6)AM="Das Passwort braucht mindestens 6 Zeichen.";
- else if(ACC.some(a=>a.u==u))AM="Diesen Benutzernamen gibt es schon.";
- if(AM){render();return}
- const s=b64e(crypto.getRandomValues(new Uint8Array(16))),i=150000;let h;
- try{h=await hashPw(p,s,i)}catch(e){AM="Konto konnte in diesem Browser nicht erstellt werden.";render();return}
- AM="Wird gespeichert …";AE=0;render();
- await pubAcc(ACC.concat([{u,s,i,h}]),"Konto „"+u+"“ angelegt.")}
-function delAcc(u){if(AC!=u){AC=u;render();return}AC="";AM="Wird gespeichert …";AE=0;pubAcc(ACC.filter(a=>a.u!=u),"Konto „"+u+"“ gelöscht.")}
-function genPw(){const c="abcdefghjkmnpqrstuvwxyz23456789";let p="";crypto.getRandomValues(new Uint8Array(10)).forEach(v=>{p+=c[v%c.length]});$("#np").value=p}
+
+async function login(){
+  const u=un($("#lu").value),p=$("#lp").value;LU=u;
+  const a=ACC.find(x=>x.u==u);let ok=false;
+  if(a&&p){
+    try{ok=(await hashPw(p,a.s,a.i))==a.h}
+    catch(e){LM="Die Anmeldung geht in diesem Browser leider nicht.";render();return}
+  }
+  if(!ok){LM="Benutzername oder Passwort stimmt nicht.";render();return}
+  setMode({k:"acc",u:a.u});
+}
+
+function logout(){
+  try{localStorage.removeItem(MK)}catch(e){}
+  M=null;loadS();Q=null;T=null;V={p:"home"};LM="";render();
+}
+
+function genPw(){
+  const c="abcdefghjkmnpqrstuvwxyz23456789";let p="";
+  crypto.getRandomValues(new Uint8Array(10)).forEach(v=>{p+=c[v%c.length]});
+  const el=$("#np")||$("#gp");if(el)el.value=p;
+}
+
+async function createAccount(uInput,pInput,autoLogin){
+  const u=un(uInput),p=pInput;AM="";AE=1;
+  if(!/^[a-z0-9._-]{2,20}$/.test(u))AM="Benutzername: 2 bis 20 Zeichen (Buchstaben, Zahlen, ., -, _).";
+  else if(p.length<6)AM="Das Passwort braucht mindestens 6 Zeichen.";
+  else if(ACC.some(a=>a.u==u))AM="Diesen Benutzernamen gibt es schon.";
+  if(AM){render();return}
+  const s=b64e(crypto.getRandomValues(new Uint8Array(16))),i=150000;let h;
+  try{h=await hashPw(p,s,i)}catch(e){AM="Konto konnte in diesem Browser nicht erstellt werden.";render();return}
+  AM="Wird in Supabase gespeichert …";AE=0;render();
+  const {error}=await sb.from("konten").insert({u,s,i,h,state:{k:{},f:[],t:Date.now()}});
+  if(error){AM="Fehler beim Speichern: "+error.message;AE=1;render();return}
+  ACC.push({u,s,i,h});
+  AM="Konto „"+u+"“ wurde angelegt.";AE=0;
+  if(autoLogin)setMode({k:"acc",u});
+  else render();
+}
+
+function addAcc(){createAccount($("#nu").value,$("#np").value,false)}
+function genAcc(){createAccount($("#gu").value,$("#gp").value,true)}
+
+async function delAcc(u){
+  if(AC!=u){AC=u;render();return}
+  AC="";AM="Wird gelöscht …";AE=0;render();
+  const {error}=await sb.from("konten").delete().eq("u",u);
+  if(error){AM="Fehler beim Löschen: "+error.message;AE=1;render();return}
+  ACC=ACC.filter(a=>a.u!=u);
+  AM="Konto „"+u+"“ gelöscht.";AE=0;
+  if(M&&M.u==u)logout();else render();
+}
 
 const note=()=>AM?`<p class="${AE?"bad":"ok"}">${esc(AM)}</p>`:"";
 const lf=()=>`<div class="login"><input id="lu" value="${esc(LU)}" placeholder="Benutzername" autocomplete="username" autocapitalize="off" autocorrect="off"><input id="lp" type="password" placeholder="Passwort" autocomplete="current-password" onkeydown="if(event.key=='Enter')login()"><button class="btn" onclick="login()">Anmelden</button>${LM?`<p class="bad">${esc(LM)}</p>`:""}</div>`;
-function gate(){if(!ACCREADY)return `<h1>Lern-App</h1><p class="sub">Wird geladen …</p>`;
- return `<h1>Lern-App</h1><p class="sub">Bitte melde dich mit Benutzername und Passwort an.</p>${lf()}${HAS?"":ACC.length?"":`<h2>Noch keine Konten</h2><p class="sub">Erzeuge hier den ersten Konto-Eintrag und trage ihn in die Datei konten.json ein.</p>${genBox()}`}`}
-function set(){const cl=M.k=="claude";
- let h=`<h1>Einstellungen</h1><h2>Anmeldung</h2><div class="card"><b>${cl?"Claude-Konto":"Konto „"+esc(M.u)+"“"}</b><span>${cl?"Fortschritt in deinem Claude-Konto":"Fortschritt nur in diesem Browser"}</span></div>`;
- if(!cl)h+=`<button class="btn2" onclick="logout()">Abmelden</button>`;
- h+=`<h2>${cl?"Mit Konto anmelden":"Anderes Konto"}</h2>${lf()}`;
- if(canAdmin())h+=`<h2>Konten verwalten</h2>${ACC.length?ACC.map(a=>`<div class="wv"><b>${esc(a.u)}</b><button class="btn2 sm" onclick="delAcc('${a.u}')">${AC==a.u?"Wirklich löschen":"Löschen"}</button></div>`).join(""):`<p class="sub">Noch keine Konten.</p>`}
+
+function gate(){
+  if(!ACCREADY)return `<h1>Lern-App</h1><p class="sub">Wird geladen …</p>`;
+  return `<h1>Lern-App</h1><p class="sub">Bitte melde dich mit Benutzername und Passwort an.</p>${lf()}${ACC.length?"":`<h2>Erstes Konto anlegen</h2><p class="sub">Noch keine Konten in Supabase vorhanden. Lege jetzt das erste Konto an:</p><div class="login"><input id="gu" placeholder="Neuer Benutzername" autocapitalize="off" autocorrect="off"><input id="gp" type="text" placeholder="Passwort (mind. 6 Zeichen)" autocapitalize="off" autocorrect="off"><button class="lnk" onclick="genPw()">Passwort erzeugen</button><button class="btn" onclick="genAcc()">Konto direkt anlegen</button></div>${note()}`}`;
+}
+
+function set(){
+  let h=`<h1>Einstellungen</h1><h2>Anmeldung</h2><div class="card"><b>Konto „${esc(M.u)}“</b><span>Fortschritt wird automatisch mit Supabase synchronisiert</span></div>`;
+  h+=`<button class="btn2" onclick="logout()">Abmelden</button>`;
+  h+=`<h2>Anderes Konto</h2>${lf()}`;
+  h+=`<h2>Konten verwalten</h2>${ACC.length?ACC.map(a=>`<div class="wv"><b>${esc(a.u)}</b><button class="btn2 sm" onclick="delAcc('${a.u}')">${AC==a.u?"Wirklich löschen":"Löschen"}</button></div>`).join(""):`<p class="sub">Noch keine Konten.</p>`}
 <div class="login" style="margin-top:10px"><input id="nu" placeholder="Neuer Benutzername" autocapitalize="off" autocorrect="off"><input id="np" type="text" placeholder="Passwort (mind. 6 Zeichen)" autocapitalize="off" autocorrect="off"><button class="lnk" onclick="genPw()">Passwort erzeugen</button><button class="btn" onclick="addAcc()">Konto anlegen</button></div>
-<p class="sub">Gib Benutzername und Passwort an die Person weiter. Gespeichert wird nur ein Hash, nicht das Passwort.</p>${note()}`;
- if(!HAS)h+=`<h2>Konto für andere vorbereiten</h2>`+genBox();
- h+=`<h2>Sicherung</h2><p class="sub">Kopiere diesen Text als Sicherung deines Fortschritts. Zum Wiederherstellen fügst du ihn hier ein und tippst auf Einspielen.</p><textarea id="bk" rows="5">${esc(JSON.stringify(S))}</textarea><button class="btn" onclick="imp()">Einspielen</button>`;
- return h}
+<p class="sub">Neue Konten landen sofort in Supabase. Gespeichert wird nur ein Hash, nicht das Passwort.</p>${note()}`;
+  h+=`<h2>Sicherung</h2><p class="sub">Kopiere diesen Text als Sicherung deines Fortschritts. Zum Wiederherstellen fügst du ihn hier ein und tippst auf Einspielen.</p><textarea id="bk" rows="5">${esc(JSON.stringify(S))}</textarea><button class="btn" onclick="imp()">Einspielen</button>`;
+  return h;
+}
 function tabs(){const t=$("#tb");if(!t||!t.style)return;
  const run=(V.p=="tr"&&T&&T.s==1)||(V.p=="sx"&&Q&&Q.i<Q.q.length);
  if(!M||run){t.style.display="none";t.innerHTML="";return}
