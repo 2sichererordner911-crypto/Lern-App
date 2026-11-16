@@ -1326,20 +1326,78 @@ function fixS(){S.k=S.k||{};S.f=S.f||[];S.r=S.r||{};S.w=S.w||{};S.sr=S.sr||{};fo
 const pr=(a,b,t,w)=>`<div class="pr"><span><i>S→D</i> ${a} von ${t}${w?" gelernt":""} · ${pt(a,t)} %</span><span><i>D→S</i> ${b} von ${t}${w?" gelernt":""} · ${pt(b,t)} %</span></div>`;
 const find=id=>{let r;U.forEach(u=>u.x.forEach(x=>{if(x.id==id)r=x}));return r};
 
-// --- HIER DEINE SUPABASE-DATEN EINTRAGEN ---
+// --- HIER DEINE SUPABASE-DATEN & ADMIN-NAMEN EINTRAGEN ---
 const SUPABASE_URL = "https://ypudhcudvkyhjuefzxuh.supabase.co";
 const SUPABASE_KEY = "sb_publishable_yi3JSEaGrxrZfPFiOf5Gag_bpdxPADA";
+const ADMIN_USERS = ["alex"]; // <-- Hier deinen Benutzernamen (kleingeschrieben) eintragen!
+
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-let ACCREADY=0,ACC=[];
+const PAL_VARS = [
+  {k:"--bg",  n:"Hintergrund",           d:"#fbfaf7", dk:"#151614"},
+  {k:"--fg",  n:"Textfarbe",             d:"#1f1f1c", dk:"#ecebe6"},
+  {k:"--mu",  n:"Sekundärer Text",       d:"#77766f", dk:"#9d9c94"},
+  {k:"--c",   n:"Karten & Felder",       d:"#ffffff", dk:"#1f201d"},
+  {k:"--bd",  n:"Rahmen & Linien",       d:"#ece9e1", dk:"#2d2e2a"},
+  {k:"--ac",  n:"Akzentfarbe (Buttons)", d:"#2f6f4f", dk:"#6fbf94"},
+  {k:"--ac2", n:"Akzent-Hintergrund",    d:"#eaf3ed", dk:"#223028"},
+  {k:"--on",  n:"Text auf Buttons",      d:"#ffffff", dk:"#10201a"},
+  {k:"--bad", n:"Fehlerfarbe",           d:"#b3402f", dk:"#e6806f"}
+];
+
+const PAL_PRESETS = {
+  light: {"--bg":"#fbfaf7","--fg":"#1f1f1c","--mu":"#77766f","--c":"#ffffff","--bd":"#ece9e1","--ac":"#2f6f4f","--ac2":"#eaf3ed","--on":"#ffffff","--bad":"#b3402f"},
+  dark:  {"--bg":"#151614","--fg":"#ecebe6","--mu":"#9d9c94","--c":"#1f201d","--bd":"#2d2e2a","--ac":"#6fbf94","--ac2":"#223028","--on":"#10201a","--bad":"#e6806f"},
+  ocean: {"--bg":"#f0f6fa","--fg":"#102a43","--mu":"#627d98","--c":"#ffffff","--bd":"#d9e2ec","--ac":"#1976d2","--ac2":"#e3f2fd","--on":"#ffffff","--bad":"#d32f2f"},
+  night: {"--bg":"#0f172a","--fg":"#f8fafc","--mu":"#94a3b8","--c":"#1e293b","--bd":"#334155","--ac":"#38bdf8","--ac2":"#0c4a6e","--on":"#0f172a","--bad":"#f87171"}
+};
+
+let ACCREADY=0,ACC=[],STAB="normal";
 const MK="lernapp-mode";
 let S={k:{},f:[],t:0},V={p:"home"},T=null,DC=0,P={m:"k",d:0},tm=null,M=null,LM="",AM="",AE=0,AC="",LU="";
 const lsKey=()=>M&&M.k=="acc"?LS+":u:"+M.u:LS;
+const un=s=>String(s||"").trim().toLowerCase();
+const isAdmin=()=>Boolean(M&&M.k=="acc"&&ADMIN_USERS.map(un).includes(un(M.u)));
+
+function applyPal(){
+  const r=document.documentElement;
+  PAL_VARS.forEach(v=>{
+    if(S&&S.pal&&S.pal[v.k])r.style.setProperty(v.k,S.pal[v.k]);
+    else r.style.removeProperty(v.k);
+  });
+}
+
+function getCol(v){
+  if(S&&S.pal&&S.pal[v.k])return S.pal[v.k];
+  const isDark=window.matchMedia&&window.matchMedia("(prefers-color-scheme: dark)").matches;
+  return isDark?v.dk:v.d;
+}
+
+function liveCol(k,val){
+  document.documentElement.style.setProperty(k,val);
+}
+
+function saveCol(k,val){
+  S.pal=S.pal||{};
+  PAL_VARS.forEach(v=>{if(!S.pal[v.k])S.pal[v.k]=getCol(v)});
+  S.pal[k]=val;
+  applyPal();
+  save();
+}
+
+function setPreset(name){
+  if(!name){delete S.pal}
+  else if(PAL_PRESETS[name]){S.pal=Object.assign({},PAL_PRESETS[name])}
+  applyPal();
+  save();
+  render();
+}
 
 function loadS(){
   S={k:{},f:[],t:0};
   try{const r=localStorage.getItem(lsKey());if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
   fixS();
+  applyPal();
 }
 
 function restore(){
@@ -1365,6 +1423,7 @@ loadS();
 
 function save(){
   S.t=Date.now();
+  applyPal();
   try{localStorage.setItem(lsKey(),JSON.stringify(S))}catch(e){}
   clearTimeout(tm);
   if(M&&M.k=="acc"){
@@ -1385,6 +1444,7 @@ async function initDb(){
     if((r.t||0)>S.t){
       S=Object.assign({k:{},f:[],t:0},r);
       fixS();
+      applyPal();
       try{localStorage.setItem(lsKey(),JSON.stringify(S))}catch(e){}
       render();
     }else if(S.t>(r.t||0)){
@@ -1394,7 +1454,7 @@ async function initDb(){
 }
 
 function setMode(m){
-  M=m;
+  M=m;STAB="normal";
   try{
     if(m&&m.k=="acc"){
       const a=ACC.find(x=>x.u==m.u);
@@ -1411,7 +1471,6 @@ async function hashPw(pw,salt,it){
   const k=await crypto.subtle.importKey("raw",new TextEncoder().encode(pw),"PBKDF2",false,["deriveBits"]);
   return b64e(new Uint8Array(await crypto.subtle.deriveBits({name:"PBKDF2",salt:b64d(salt),iterations:it,hash:"SHA-256"},k,256)));
 }
-const un=s=>String(s||"").trim().toLowerCase();
 
 async function login(){
   const u=un($("#lu").value),p=$("#lp").value;LU=u;
@@ -1426,7 +1485,7 @@ async function login(){
 
 function logout(){
   try{localStorage.removeItem(MK)}catch(e){}
-  M=null;loadS();Q=null;T=null;V={p:"home"};LM="";render();
+  M=null;STAB="normal";loadS();Q=null;T=null;V={p:"home"};LM="";render();
 }
 
 function genPw(){
@@ -1436,6 +1495,7 @@ function genPw(){
 }
 
 async function createAccount(uInput,pInput,autoLogin){
+  if(!autoLogin&&!isAdmin()){AM="Keine Berechtigung.";AE=1;render();return}
   const u=un(uInput),p=pInput;AM="";AE=1;
   if(!/^[a-z0-9._-]{2,20}$/.test(u))AM="Benutzername: 2 bis 20 Zeichen (Buchstaben, Zahlen, ., -, _).";
   else if(p.length<6)AM="Das Passwort braucht mindestens 6 Zeichen.";
@@ -1456,6 +1516,7 @@ function addAcc(){createAccount($("#nu").value,$("#np").value,false)}
 function genAcc(){createAccount($("#gu").value,$("#gp").value,true)}
 
 async function delAcc(u){
+  if(!isAdmin())return;
   if(AC!=u){AC=u;render();return}
   AC="";AM="Wird gelöscht …";AE=0;render();
   const {error}=await sb.from("konten").delete().eq("u",u);
@@ -1473,13 +1534,51 @@ function gate(){
   return `<h1>Lern-App</h1><p class="sub">Bitte melde dich mit Benutzername und Passwort an.</p>${lf()}${ACC.length?"":`<h2>Erstes Konto anlegen</h2><p class="sub">Noch keine Konten in Supabase vorhanden. Lege jetzt das erste Konto an:</p><div class="login"><input id="gu" placeholder="Neuer Benutzername" autocapitalize="off" autocorrect="off"><input id="gp" type="text" placeholder="Passwort (mind. 6 Zeichen)" autocapitalize="off" autocorrect="off"><button class="lnk" onclick="genPw()">Passwort erzeugen</button><button class="btn" onclick="genAcc()">Konto direkt anlegen</button></div>${note()}`}`;
 }
 
+function setTab(t){
+  STAB=t;AM="";LM="";render();
+}
+
 function set(){
-  let h=`<h1>Einstellungen</h1><h2>Anmeldung</h2><div class="card"><b>Konto „${esc(M.u)}“</b><span>Fortschritt wird automatisch mit Supabase synchronisiert</span></div>`;
+  let h=`<h1>Einstellungen</h1>
+  <div class="seg" style="margin:8px 0 14px">
+    <button class="${STAB=="normal"?"on":""}" onclick="setTab('normal')">Normal</button>
+    <button class="${STAB=="admin"?"on":""}" onclick="setTab('admin')">Administration</button>
+  </div>`;
+
+  if(STAB=="admin"){
+    if(!isAdmin()){
+      h+=`<h2>Administration</h2><div class="card"><b>Kein Zugriff</b><span>Dieser Bereich ist nur für dich (${esc(ADMIN_USERS.join(", "))}) freigeschaltet.</span></div>`;
+      return h;
+    }
+    h+=`<h2>Konten verwalten</h2>${ACC.length?ACC.map(a=>`<div class="wv"><b>${esc(a.u)}</b><button class="btn2 sm" onclick="delAcc('${a.u}')">${AC==a.u?"Wirklich löschen":"Löschen"}</button></div>`).join(""):`<p class="sub">Noch keine Konten.</p>`}
+    <div class="login" style="margin-top:10px">
+      <input id="nu" placeholder="Neuer Benutzername" autocapitalize="off" autocorrect="off">
+      <input id="np" type="text" placeholder="Passwort (mind. 6 Zeichen)" autocapitalize="off" autocorrect="off">
+      <button class="lnk" onclick="genPw()">Passwort erzeugen</button>
+      <button class="btn" onclick="addAcc()">Konto anlegen</button>
+    </div>
+    <p class="sub">Neue Konten landen sofort in Supabase. Gespeichert wird nur ein Hash, nicht das Passwort.</p>${note()}`;
+    return h;
+  }
+
+  h+=`<h2>Anmeldung</h2><div class="card"><b>Konto „${esc(M.u)}“</b><span>Fortschritt & Farben werden automatisch mit Supabase synchronisiert</span></div>`;
   h+=`<button class="btn2" onclick="logout()">Abmelden</button>`;
   h+=`<h2>Anderes Konto</h2>${lf()}`;
-  h+=`<h2>Konten verwalten</h2>${ACC.length?ACC.map(a=>`<div class="wv"><b>${esc(a.u)}</b><button class="btn2 sm" onclick="delAcc('${a.u}')">${AC==a.u?"Wirklich löschen":"Löschen"}</button></div>`).join(""):`<p class="sub">Noch keine Konten.</p>`}
-<div class="login" style="margin-top:10px"><input id="nu" placeholder="Neuer Benutzername" autocapitalize="off" autocorrect="off"><input id="np" type="text" placeholder="Passwort (mind. 6 Zeichen)" autocapitalize="off" autocorrect="off"><button class="lnk" onclick="genPw()">Passwort erzeugen</button><button class="btn" onclick="addAcc()">Konto anlegen</button></div>
-<p class="sub">Neue Konten landen sofort in Supabase. Gespeichert wird nur ein Hash, nicht das Passwort.</p>${note()}`;
+
+  h+=`<h2>Farbpalette</h2>
+  <p class="sub">Wähle eine Vorlage oder passe jede Farbe einzeln an.</p>
+  <div style="margin-bottom:10px">
+    <button class="btn2 sm" style="margin:0 6px 6px 0" onclick="setPreset('')">System-Standard</button>
+    <button class="btn2 sm" style="margin:0 6px 6px 0" onclick="setPreset('light')">Hell</button>
+    <button class="btn2 sm" style="margin:0 6px 6px 0" onclick="setPreset('dark')">Dunkel</button>
+    <button class="btn2 sm" style="margin:0 6px 6px 0" onclick="setPreset('ocean')">Ozean</button>
+    <button class="btn2 sm" style="margin:0 6px 6px 0" onclick="setPreset('night')">Mitternacht</button>
+  </div>`+
+  PAL_VARS.map(v=>{
+    const c=getCol(v);
+    return `<div class="wv"><div><b>${esc(v.n)}</b><small>${esc(v.k)}</small></div><input type="color" value="${esc(c)}" oninput="liveCol('${v.k}',this.value)" onchange="saveCol('${v.k}',this.value)" style="width:48px;height:36px;padding:2px;cursor:pointer;flex:none"></div>`;
+  }).join("");
+
   h+=`<h2>Sicherung</h2><p class="sub">Kopiere diesen Text als Sicherung deines Fortschritts. Zum Wiederherstellen fügst du ihn hier ein und tippst auf Einspielen.</p><textarea id="bk" rows="5">${esc(JSON.stringify(S))}</textarea><button class="btn" onclick="imp()">Einspielen</button>`;
   return h;
 }
