@@ -51,7 +51,6 @@ details{margin:26px 0}summary{cursor:pointer;color:var(--mu)}
 <body>
 <main id="app"></main>
 <nav id="tb"></nav>
-<script type="application/json" id="acc">[]</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script id="mainjs">
 const U=[
@@ -1328,8 +1327,8 @@ const pr=(a,b,t,w)=>`<div class="pr"><span><i>S→D</i> ${a} von ${t}${w?" geler
 const find=id=>{let r;U.forEach(u=>u.x.forEach(x=>{if(x.id==id)r=x}));return r};
 
 // --- HIER DEINE SUPABASE-DATEN EINTRAGEN ---
-const SUPABASE_URL = "https://DEIN-PROJEKT.supabase.co";
-const SUPABASE_KEY = "DEIN_SUPABASE_ANON_PUBLIC_KEY";
+const SUPABASE_URL = "https://ypudhcudvkyhjuefzxuh.supabase.co";
+const SUPABASE_KEY = "sb_publishable_yi3JSEaGrxrZfPFiOf5Gag_bpdxPADA";
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 let ACCREADY=0,ACC=[];
