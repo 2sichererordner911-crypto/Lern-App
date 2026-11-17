@@ -1352,7 +1352,7 @@ const PAL_PRESETS = {
   night: {"--bg":"#0f172a","--fg":"#f8fafc","--mu":"#94a3b8","--c":"#1e293b","--bd":"#334155","--ac":"#38bdf8","--ac2":"#0c4a6e","--on":"#0f172a","--bad":"#f87171"}
 };
 
-let ACCREADY=0,ACC=[],STAB="normal",PWU="";
+let ACCREADY=0,ACC=[],STAB="normal",SET_U="",STAT_U="";
 const MK="lernapp-mode";
 let S={k:{},f:[],t:0},V={p:"home"},T=null,DC=0,P={m:"k",d:0},tm=null,M=null,LM="",AM="",AE=0,AC="",LU="";
 const lsKey=()=>M&&M.k=="acc"?LS+":u:"+M.u:LS;
@@ -1391,21 +1391,117 @@ function setPreset(name){
   render();
 }
 
+function fmtRelTime(ts){
+  if(!ts)return "";
+  const diff=Date.now()-ts;
+  if(diff<90000)return "gerade eben";
+  const mins=Math.floor(diff/60000);
+  if(mins<60)return `vor ${mins} Min.`;
+  const d=new Date(ts),now=new Date();
+  const time=d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
+  if(d.toDateString()===now.toDateString())return `Heute, ${time} Uhr`;
+  const yest=new Date(now);yest.setDate(now.getDate()-1);
+  if(d.toDateString()===yest.toDateString())return `Gestern, ${time} Uhr`;
+  const date=d.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"numeric"});
+  return `${date}, ${time} Uhr`;
+}
+
 function fmtLast(a){
   const st=a&&a.state?a.state:{};
   const ts=st.last||st.t||0;
   if(!ts)return "Noch nie online";
-  const diff=Date.now()-ts;
-  if(diff<90000)return "🟢 Gerade online";
-  const mins=Math.floor(diff/60000);
-  if(mins<60)return `Zuletzt online: vor ${mins} Min.`;
-  const d=new Date(ts),now=new Date();
-  const time=d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
-  if(d.toDateString()===now.toDateString())return `Zuletzt online: Heute, ${time} Uhr`;
-  const yest=new Date(now);yest.setDate(now.getDate()-1);
-  if(d.toDateString()===yest.toDateString())return `Zuletzt online: Gestern, ${time} Uhr`;
-  const date=d.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"numeric"});
-  return `Zuletzt online: ${date}, ${time} Uhr`;
+  if(Date.now()-ts<90000)return "🟢 Gerade online";
+  return "Zuletzt online: "+fmtRelTime(ts);
+}
+
+function unitTitle(id){
+  const p=String(id||"").split("-");
+  const u=U[p[0]],x=u&&u.x[p[1]];
+  if(u&&x)return `${u.n} – ${x.n}`;
+  const f=find(id);
+  return f?f.n:String(id||"");
+}
+
+function getLastActivity(a){
+  const st=a&&a.state?a.state:{};
+  let best=st.act&&st.act.t?{txt:st.act.txt,t:st.act.t}:null;
+  const rAll=st.r||{};
+  for(const id in rAll){
+    for(const d of ["sd","ds"]){
+      const item=rAll[id]&&rAll[id][d];
+      if(item&&item.d&&(!best||item.d>best.t)){
+        best={txt:`Vokabeltest ${LB[d]||d} · ${unitTitle(id)} (${pt(item.ok,item.n)} %)`,t:item.d};
+      }
+    }
+  }
+  const srAll=st.sr||{};
+  for(const id in srAll){
+    for(const d of ["sd","ds"]){
+      const item=srAll[id]&&srAll[id][d];
+      if(item&&item.d&&(!best||item.d>best.t)){
+        best={txt:`Satztrainer ${LB[d]||d} · ${unitTitle(id)} (${pt(item.ok,item.n)} %)`,t:item.d};
+      }
+    }
+  }
+  return best;
+}
+
+function getUserStats(a){
+  const st=a&&a.state?a.state:{};
+  let vTot=0,vSd=0,vDs=0,sTot=0,sSd=0,sDs=0;
+  const units=[];
+  U.forEach(u=>{
+    let uvTot=0,uvSd=0,uvDs=0;
+    u.x.forEach(x=>{
+      const len=x.l.length;
+      vTot+=len;uvTot+=len;
+      const r=(st.r||{})[x.id]||{};
+      if(r.sd&&r.sd.ok!=null){const ok=Math.min(r.sd.ok,len);vSd+=ok;uvSd+=ok}
+      if(r.ds&&r.ds.ok!=null){const ok=Math.min(r.ds.ok,len);vDs+=ok;uvDs+=ok}
+      const slen=typeof sxl==="function"?sxl(x.id).length:0;
+      if(slen){
+        sTot+=slen;
+        const sr=(st.sr||{})[x.id]||{};
+        if(sr.sd&&sr.sd.ok!=null)sSd+=Math.min(sr.sd.ok,slen);
+        if(sr.ds&&sr.ds.ok!=null)sDs+=Math.min(sr.ds.ok,slen);
+      }
+    });
+    if(uvSd>0||uvDs>0){
+      units.push({n:u.n,sd:pt(uvSd,uvTot),ds:pt(uvDs,uvTot)});
+    }
+  });
+  return{
+    vTot,vSd,vDs,vSdPct:pt(vSd,vTot),vDsPct:pt(vDs,vTot),
+    sTot,sSd,sDs,sSdPct:pt(sSd,sTot),sDsPct:pt(sDs,sTot),
+    units
+  };
+}
+
+function hookActivity(){
+  if(typeof fin==="function"&&!fin._w){
+    const _fin=fin;
+    fin=function(){
+      _fin.apply(this,arguments);
+      if(T&&T.x&&!T.x.v){
+        const mLabel=T.m=="ts"?"Vokabeltest S→D":T.m=="td"?"Vokabeltest D→S":T.m=="k"?"Lernkarten":"Vokabel-Übung";
+        S.act={txt:`${mLabel} · ${unitTitle(T.x.id)} (${pt(T.ok,T.q.length)} %)`,t:Date.now()};
+        save();
+      }
+    };
+    fin._w=1;
+  }
+  if(typeof snxt==="function"&&!snxt._w){
+    const _snxt=snxt;
+    snxt=function(){
+      const wasRunning=Q&&Q.i<Q.q.length;
+      _snxt.apply(this,arguments);
+      if(wasRunning&&Q&&Q.i>=Q.q.length){
+        S.act={txt:`Satztrainer ${LB[Q.z]||""} · ${unitTitle(Q.id)} (${pt(Q.ok,Q.q.length)} %)`,t:Date.now()};
+        save();
+      }
+    };
+    snxt._w=1;
+  }
 }
 
 async function pingOnline(){
@@ -1440,6 +1536,7 @@ function restore(){
 }
 
 async function loadAcc(silent){
+  hookActivity();
   try{
     const {data,error}=await sb.from("konten").select("u,s,i,h,state").order("created_at",{ascending:true});
     if(!error&&Array.isArray(data))ACC=data;
@@ -1487,7 +1584,7 @@ async function initDb(){
 }
 
 function setMode(m){
-  M=m;STAB="normal";PWU="";
+  M=m;STAB="normal";SET_U="";STAT_U="";
   try{
     if(m&&m.k=="acc"){
       const a=ACC.find(x=>x.u==m.u);
@@ -1518,7 +1615,7 @@ async function login(){
 
 function logout(){
   try{localStorage.removeItem(MK)}catch(e){}
-  M=null;STAB="normal";PWU="";loadS();Q=null;T=null;V={p:"home"};LM="";render();
+  M=null;STAB="normal";SET_U="";STAT_U="";loadS();Q=null;T=null;V={p:"home"};LM="";render();
 }
 
 function genPw(targetId){
@@ -1550,9 +1647,14 @@ async function createAccount(uInput,pInput,autoLogin){
 function addAcc(){createAccount($("#nu").value,$("#np").value,false)}
 function genAcc(){createAccount($("#gu").value,$("#gp").value,true)}
 
-function togglePwEdit(u){
-  PWU=(PWU===u)?"":u;
+function toggleAccSet(u){
+  SET_U=(SET_U===u)?"":u;
   AC="";AM="";render();
+}
+
+function toggleAccStat(u){
+  STAT_U=(STAT_U===u)?"":u;
+  render();
 }
 
 async function changePw(u){
@@ -1570,18 +1672,19 @@ async function changePw(u){
   if(M&&M.u==u){
     try{localStorage.setItem(MK,"acc:"+u+":"+h.slice(0,16))}catch(e){}
   }
-  PWU="";
+  SET_U="";
   AM="Passwort für „"+u+"“ wurde erfolgreich geändert.";AE=0;
   render();
 }
 
 async function delAcc(u){
   if(!isAdmin())return;
-  if(AC!=u){AC=u;PWU="";render();return}
+  if(AC!=u){AC=u;render();return}
   AC="";AM="Wird gelöscht …";AE=0;render();
   const {error}=await sb.from("konten").delete().eq("u",u);
   if(error){AM="Fehler beim Löschen: "+error.message;AE=1;render();return}
   ACC=ACC.filter(a=>a.u!=u);
+  SET_U="";STAT_U="";
   AM="Konto „"+u+"“ gelöscht.";AE=0;
   if(M&&M.u==u)logout();else render();
 }
@@ -1595,7 +1698,7 @@ function gate(){
 }
 
 function setTab(t){
-  STAB=t;AM="";LM="";PWU="";AC="";
+  STAB=t;AM="";LM="";SET_U="";AC="";
   if(t==="admin")loadAcc();
   else render();
 }
@@ -1613,27 +1716,65 @@ function set(){
       return h;
     }
     h+=`<div style="display:flex;justify-content:space-between;align-items:baseline"><h2>Konten verwalten</h2><button class="lnk" style="font-size:.85em;padding:0" onclick="loadAcc()">↻ Aktualisieren</button></div>`;
-    h+=ACC.length?ACC.map(a=>`
-      <div class="card" style="padding:10px 14px;margin:8px 0">
-        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px">
-          <div>
+    h+=ACC.length?ACC.map(a=>{
+      const stOpen=STAT_U===a.u,cfgOpen=SET_U===a.u;
+      const stats=stOpen?getUserStats(a):null;
+      const lastAct=stOpen?getLastActivity(a):null;
+      return `
+      <div class="card" style="padding:11px 14px;margin:8px 0">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+          <div onclick="toggleAccStat('${a.u}')" style="cursor:pointer;flex:1;min-width:0">
             <b style="font-size:1.05em">${esc(a.u)}</b>
             <small style="display:block;color:var(--mu);margin-top:2px">${esc(fmtLast(a))}</small>
           </div>
-          <div style="display:flex;gap:6px">
-            <button class="btn2 sm" onclick="togglePwEdit('${a.u}')">${PWU==a.u?"Abbrechen":"Passwort"}</button>
-            <button class="btn2 sm" onclick="delAcc('${a.u}')">${AC==a.u?"Wirklich löschen":"Löschen"}</button>
+          <div style="display:flex;gap:6px;flex:none">
+            <button class="btn2 sm" title="Fortschritt & Aktivität" onclick="toggleAccStat('${a.u}')">${stOpen?"▾":"▸"}</button>
+            <button class="btn2 sm" title="Konto-Einstellungen" onclick="toggleAccSet('${a.u}')">⚙️</button>
           </div>
         </div>
-        ${PWU==a.u?`
+
+        ${stOpen?`
+        <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);font-size:.9em">
+          <div style="margin-bottom:8px">
+            <small style="color:var(--mu);text-transform:uppercase;letter-spacing:.05em;font-size:.76em;font-weight:600">Zuletzt gemacht</small>
+            <div style="margin-top:2px">${lastAct?`<b>${esc(lastAct.txt)}</b> <small style="color:var(--mu)">(${esc(fmtRelTime(lastAct.t))})</small>`:`<span style="color:var(--mu)">Noch keine Übung abgeschlossen</span>`}</div>
+          </div>
+
+          <small style="color:var(--mu);text-transform:uppercase;letter-spacing:.05em;font-size:.76em;font-weight:600">Vokabeltrainer (${stats.vTot} Vokabeln)</small>
+          <div style="margin:3px 0 8px">
+            <div>S→D: <b>${stats.vSdPct} %</b> <small style="color:var(--mu)">(${stats.vSd}/${stats.vTot})</small></div>
+            ${bar(stats.vSd,stats.vTot)}
+            <div>D→S: <b>${stats.vDsPct} %</b> <small style="color:var(--mu)">(${stats.vDs}/${stats.vTot})</small></div>
+            ${bar(stats.vDs,stats.vTot)}
+          </div>
+
+          ${stats.sTot?`
+          <small style="color:var(--mu);text-transform:uppercase;letter-spacing:.05em;font-size:.76em;font-weight:600">Satzschreibtrainer (${stats.sTot} Sätze)</small>
+          <div style="margin:3px 0 6px">
+            <div>S→D: <b>${stats.sSdPct} %</b> <small style="color:var(--mu)">(${stats.sSd}/${stats.sTot})</small> · D→S: <b>${stats.sDsPct} %</b> <small style="color:var(--mu)">(${stats.sDs}/${stats.sTot})</small></div>
+          </div>`:""}
+
+          ${stats.units.length?`
+          <small style="color:var(--mu);text-transform:uppercase;letter-spacing:.05em;font-size:.76em;font-weight:600">Nach Unidad</small>
+          <div style="margin-top:3px;color:var(--mu);font-size:.86em">
+            ${stats.units.map(u=>`<div><b style="color:var(--fg);font-weight:600">${esc(u.n)}:</b> S→D ${u.sd} % · D→S ${u.ds} %</div>`).join("")}
+          </div>`:""}
+        </div>`:""}
+
+        ${cfgOpen?`
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd)">
+          <small style="display:block;color:var(--mu);margin-bottom:6px;font-weight:600">Passwort ändern</small>
           <div class="row" style="margin:0 0 6px 0">
             <input id="epw" type="text" placeholder="Neues Passwort (mind. 6 Zeichen)" autocapitalize="off" autocorrect="off" onkeydown="if(event.key=='Enter')changePw('${a.u}')">
             <button class="btn sm" style="flex:none;min-height:40px" onclick="changePw('${a.u}')">Speichern</button>
           </div>
-          <button class="lnk" style="padding:0;font-size:.85em" onclick="genPw('epw')">Zufallspasswort würfeln</button>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+            <button class="lnk" style="padding:0;font-size:.85em" onclick="genPw('epw')">Passwort würfeln</button>
+            <button class="btn2 sm" style="border-color:var(--bad);color:var(--bad)" onclick="delAcc('${a.u}')">${AC==a.u?"Wirklich löschen?":"Konto löschen"}</button>
+          </div>
         </div>`:""}
-      </div>`).join(""):`<p class="sub">Noch keine Konten.</p>`;
+      </div>`;
+    }).join("") : `<p class="sub">Noch keine Konten.</p>`;
 
     h+=`<h2>Neues Konto anlegen</h2>
     <div class="login" style="margin-top:8px">
