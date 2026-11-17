@@ -1352,12 +1352,17 @@ const PAL_PRESETS = {
   night: {"--bg":"#0f172a","--fg":"#f8fafc","--mu":"#94a3b8","--c":"#1e293b","--bd":"#334155","--ac":"#38bdf8","--ac2":"#0c4a6e","--on":"#0f172a","--bad":"#f87171"}
 };
 
-let ACCREADY=0,ACC=[],STAB="normal",SET_U="",STAT_U="";
+let ACCREADY=0,ACC=[],STAB="normal",SET_U="",STAT_U="",NEW_TYPE="perm",G_DUR="60",G_CVAL="2",G_CUNIT="60",NU_VAL="",NP_VAL="";
 const MK="lernapp-mode";
 let S={k:{},f:[],t:0},V={p:"home"},T=null,DC=0,P={m:"k",d:0},tm=null,M=null,LM="",AM="",AE=0,AC="",LU="";
 const lsKey=()=>M&&M.k=="acc"?LS+":u:"+M.u:LS;
 const un=s=>String(s||"").trim().toLowerCase();
 const isAdmin=()=>Boolean(M&&M.k=="acc"&&ADMIN_USERS.map(un).includes(un(M.u)));
+
+const accType=a=>(a&&a.state&&a.state.type)||"perm";
+const isNoSave=a=>{const t=accType(a);return t==="nosave"||t==="guest"};
+const isExpired=a=>accType(a)==="guest"&&Boolean(a&&a.state&&a.state.exp&&Date.now()>=a.state.exp);
+const curAcc=()=>M&&M.k=="acc"?ACC.find(x=>x.u==M.u):null;
 
 function applyPal(){
   const r=document.documentElement;
@@ -1406,12 +1411,34 @@ function fmtRelTime(ts){
   return `${date}, ${time} Uhr`;
 }
 
+function fmtExpTime(ts){
+  if(!ts)return "";
+  const diff=ts-Date.now();
+  if(diff<=0)return "abgelaufen";
+  const mins=Math.ceil(diff/60000);
+  if(mins<60)return `in ${mins} Min.`;
+  const d=new Date(ts),now=new Date();
+  const time=d.toLocaleTimeString("de-DE",{hour:"2-digit",minute:"2-digit"});
+  if(d.toDateString()===now.toDateString())return `Heute, ${time} Uhr`;
+  const tom=new Date(now);tom.setDate(now.getDate()+1);
+  if(d.toDateString()===tom.toDateString())return `Morgen, ${time} Uhr`;
+  const date=d.toLocaleDateString("de-DE",{day:"2-digit",month:"2-digit",year:"numeric"});
+  return `${date}, ${time} Uhr`;
+}
+
 function fmtLast(a){
   const st=a&&a.state?a.state:{};
   const ts=st.last||st.t||0;
   if(!ts)return "Noch nie online";
   if(Date.now()-ts<90000)return "🟢 Gerade online";
   return "Zuletzt online: "+fmtRelTime(ts);
+}
+
+function typeBadge(a){
+  const t=accType(a);
+  if(t==="nosave")return " · Keine Sicherung";
+  if(t==="guest")return ` · Gast (läuft ab: ${fmtExpTime(a.state&&a.state.exp)})`;
+  return "";
 }
 
 function unitTitle(id){
@@ -1504,13 +1531,46 @@ function hookActivity(){
   }
 }
 
+async function cleanupExpired(list){
+  const arr=Array.isArray(list)?list:ACC;
+  const expList=arr.filter(isExpired);
+  if(!expList.length)return arr;
+  for(const a of expList){
+    sb.from("konten").delete().eq("u",a.u).then(()=>{});
+    try{localStorage.removeItem(LS+":u:"+a.u)}catch(e){}
+  }
+  const valid=arr.filter(a=>!isExpired(a));
+  if(M&&M.k=="acc"&&expList.some(a=>a.u==M.u)){
+    ACC=valid;
+    logout("Dein Gastzugang ist abgelaufen und wurde automatisch gelöscht.");
+  }
+  return valid;
+}
+
+function metaState(a,lastTs,actObj){
+  const st={type:accType(a),last:lastTs};
+  if(accType(a)==="guest"&&a.state&&a.state.exp)st.exp=a.state.exp;
+  if(actObj)st.act=actObj;
+  return st;
+}
+
 async function pingOnline(){
   if(!M||M.k!="acc")return;
   const u=M.u;
+  const a=ACC.find(x=>x.u==u);
+  if(a&&isExpired(a)){
+    ACC=await cleanupExpired(ACC);
+    return;
+  }
   S.last=Date.now();
+  if(a&&isNoSave(a)){
+    const ms=metaState(a,S.last,S.act||null);
+    a.state=ms;
+    try{await sb.from("konten").update({state:ms}).eq("u",u)}catch(e){}
+    return;
+  }
   try{localStorage.setItem(lsKey(),JSON.stringify(S))}catch(e){}
-  const accItem=ACC.find(x=>x.u==u);
-  if(accItem){accItem.state=accItem.state||{};accItem.state.last=S.last}
+  if(a)a.state=S;
   try{await sb.from("konten").update({state:S}).eq("u",u)}catch(e){}
 }
 
@@ -1518,6 +1578,11 @@ setInterval(()=>{if(document.visibilityState==="visible")pingOnline()},60000);
 
 function loadS(){
   S={k:{},f:[],t:0};
+  const a=curAcc();
+  if(a&&isNoSave(a)){
+    applyPal();
+    return;
+  }
   try{const r=localStorage.getItem(lsKey());if(r)S=Object.assign(S,JSON.parse(r))}catch(e){}
   fixS();
   applyPal();
@@ -1528,7 +1593,8 @@ function restore(){
     const m=localStorage.getItem(MK)||"";
     if(m.indexOf("acc:")==0){
       const q=m.split(":"),a=ACC.find(x=>x.u==q[1]&&x.h.slice(0,16)==q[2]);
-      if(a)M={k:"acc",u:a.u};
+      if(a&&!isExpired(a))M={k:"acc",u:a.u};
+      else localStorage.removeItem(MK);
     }
   }catch(e){}
   loadS();
@@ -1539,7 +1605,7 @@ async function loadAcc(silent){
   hookActivity();
   try{
     const {data,error}=await sb.from("konten").select("u,s,i,h,state").order("created_at",{ascending:true});
-    if(!error&&Array.isArray(data))ACC=data;
+    if(!error&&Array.isArray(data))ACC=await cleanupExpired(data);
   }catch(e){}
   if(!ACCREADY){ACCREADY=1;restore()}
   if(!silent)render();
@@ -1550,12 +1616,24 @@ function save(){
   S.t=Date.now();
   S.last=Date.now();
   applyPal();
-  try{localStorage.setItem(lsKey(),JSON.stringify(S))}catch(e){}
   clearTimeout(tm);
   if(M&&M.k=="acc"){
     const u=M.u;
-    const accItem=ACC.find(x=>x.u==u);
-    if(accItem)accItem.state=S;
+    const a=ACC.find(x=>x.u==u);
+    if(a&&isExpired(a)){
+      cleanupExpired(ACC).then(v=>{ACC=v});
+      return;
+    }
+    if(a&&isNoSave(a)){
+      const ms=metaState(a,S.last,S.act||null);
+      a.state=ms;
+      tm=setTimeout(()=>{
+        sb.from("konten").update({state:ms}).eq("u",u).then(()=>{});
+      },600);
+      return;
+    }
+    try{localStorage.setItem(lsKey(),JSON.stringify(S))}catch(e){}
+    if(a)a.state=S;
     tm=setTimeout(()=>{
       sb.from("konten").update({state:S}).eq("u",u).then(()=>{});
     },600);
@@ -1569,6 +1647,21 @@ async function initDb(){
     const {data,error}=await sb.from("konten").select("state").eq("u",u).single();
     if(error||!data||!M||M.u!=u)return;
     const r=data.state||{};
+    const a=ACC.find(x=>x.u==u);
+    if(a)a.state=r;
+    if(a&&isExpired(a)){
+      ACC=await cleanupExpired(ACC);
+      return;
+    }
+    if(a&&isNoSave(a)){
+      S={k:{},f:[],t:Date.now(),last:Date.now()};
+      applyPal();
+      const ms=metaState(a,S.last,null);
+      a.state=ms;
+      await sb.from("konten").update({state:ms}).eq("u",u);
+      render();
+      return;
+    }
     if((r.t||0)>S.t){
       S=Object.assign({k:{},f:[],t:0},r);
       fixS();
@@ -1576,8 +1669,7 @@ async function initDb(){
     }
     S.last=Date.now();
     try{localStorage.setItem(lsKey(),JSON.stringify(S))}catch(e){}
-    const accItem=ACC.find(x=>x.u==u);
-    if(accItem)accItem.state=S;
+    if(a)a.state=S;
     await sb.from("konten").update({state:S}).eq("u",u);
     render();
   }catch(e){}
@@ -1604,7 +1696,13 @@ async function hashPw(pw,salt,it){
 
 async function login(){
   const u=un($("#lu").value),p=$("#lp").value;LU=u;
-  const a=ACC.find(x=>x.u==u);let ok=false;
+  const a=ACC.find(x=>x.u==u);
+  if(a&&isExpired(a)){
+    ACC=await cleanupExpired(ACC);
+    LM="Dieser Gastzugang ist abgelaufen und wurde gelöscht.";
+    render();return;
+  }
+  let ok=false;
   if(a&&p){
     try{ok=(await hashPw(p,a.s,a.i))==a.h}
     catch(e){LM="Die Anmeldung geht in diesem Browser leider nicht.";render();return}
@@ -1613,20 +1711,52 @@ async function login(){
   setMode({k:"acc",u:a.u});
 }
 
-function logout(){
+function logout(msg){
   try{localStorage.removeItem(MK)}catch(e){}
-  M=null;STAB="normal";SET_U="";STAT_U="";loadS();Q=null;T=null;V={p:"home"};LM="";render();
+  M=null;STAB="normal";SET_U="";STAT_U="";loadS();Q=null;T=null;V={p:"home"};LM=msg||"";render();
 }
 
 function genPw(targetId){
   const c="abcdefghjkmnpqrstuvwxyz23456789";let p="";
   crypto.getRandomValues(new Uint8Array(10)).forEach(v=>{p+=c[v%c.length]});
   const el=targetId?$("#"+targetId):($("#np")||$("#gp"));
-  if(el)el.value=p;
+  if(el){el.value=p;if(targetId==="np")NP_VAL=p}
+}
+
+function syncNewInputs(){
+  const nu=$("#nu"),np=$("#np"),cv=$("#gcval"),cu=$("#gcunit");
+  if(nu)NU_VAL=nu.value;
+  if(np)NP_VAL=np.value;
+  if(cv)G_CVAL=cv.value;
+  if(cu)G_CUNIT=cu.value;
+}
+
+function setNewType(t){
+  syncNewInputs();
+  NEW_TYPE=t;
+  render();
+}
+
+function setGDur(v){
+  syncNewInputs();
+  G_DUR=v;
+  render();
+}
+
+function calcGuestExp(){
+  let mins=parseInt(G_DUR,10);
+  if(G_DUR==="custom"){
+    const v=Math.max(1,parseInt(($("#gcval")&&$("#gcval").value)||G_CVAL||"1",10));
+    const u=parseInt(($("#gcunit")&&$("#gcunit").value)||G_CUNIT||"60",10);
+    mins=v*u;
+  }
+  if(!mins||mins<1)mins=60;
+  return Date.now()+mins*60000;
 }
 
 async function createAccount(uInput,pInput,autoLogin){
   if(!autoLogin&&!isAdmin()){AM="Keine Berechtigung.";AE=1;render();return}
+  syncNewInputs();
   const u=un(uInput),p=pInput;AM="";AE=1;
   if(!/^[a-z0-9._-]{2,20}$/.test(u))AM="Benutzername: 2 bis 20 Zeichen (Buchstaben, Zahlen, ., -, _).";
   else if(p.length<6)AM="Das Passwort braucht mindestens 6 Zeichen.";
@@ -1634,12 +1764,21 @@ async function createAccount(uInput,pInput,autoLogin){
   if(AM){render();return}
   const s=b64e(crypto.getRandomValues(new Uint8Array(16))),i=150000;let h;
   try{h=await hashPw(p,s,i)}catch(e){AM="Konto konnte in diesem Browser nicht erstellt werden.";render();return}
+  const t=autoLogin?"perm":NEW_TYPE;
+  const initSt=t==="perm"
+    ?{k:{},f:[],t:Date.now(),last:autoLogin?Date.now():0,type:"perm"}
+    :{type:t,last:0,...(t==="guest"?{exp:calcGuestExp()}:{})};
   AM="Wird in Supabase gespeichert …";AE=0;render();
-  const initSt={k:{},f:[],t:Date.now(),last:autoLogin?Date.now():0};
   const {error}=await sb.from("konten").insert({u,s,i,h,state:initSt});
   if(error){AM="Fehler beim Speichern: "+error.message;AE=1;render();return}
   ACC.push({u,s,i,h,state:initSt});
-  AM="Konto „"+u+"“ wurde angelegt.";AE=0;
+  NU_VAL="";NP_VAL="";
+  AM=t==="guest"
+    ?`Gastzugang „${u}“ angelegt (gültig bis ${fmtExpTime(initSt.exp)}).`
+    :t==="nosave"
+      ?`Konto „${u}“ (ohne Speicherung) wurde angelegt.`
+      :`Konto „${u}“ wurde angelegt.`;
+  AE=0;
   if(autoLogin)setMode({k:"acc",u});
   else render();
 }
@@ -1704,6 +1843,7 @@ function setTab(t){
 }
 
 function set(){
+  const me=curAcc(),noSave=me&&isNoSave(me),tMe=me?accType(me):"perm";
   let h=`<h1>Einstellungen</h1>
   <div class="seg" style="margin:8px 0 14px">
     <button class="${STAB=="normal"?"on":""}" onclick="setTab('normal')">Normal</button>
@@ -1717,15 +1857,15 @@ function set(){
     }
     h+=`<div style="display:flex;justify-content:space-between;align-items:baseline"><h2>Konten verwalten</h2><button class="lnk" style="font-size:.85em;padding:0" onclick="loadAcc()">↻ Aktualisieren</button></div>`;
     h+=ACC.length?ACC.map(a=>{
-      const stOpen=STAT_U===a.u,cfgOpen=SET_U===a.u;
-      const stats=stOpen?getUserStats(a):null;
+      const stOpen=STAT_U===a.u,cfgOpen=SET_U===a.u,ns=isNoSave(a);
+      const stats=stOpen&&!ns?getUserStats(a):null;
       const lastAct=stOpen?getLastActivity(a):null;
       return `
       <div class="card" style="padding:11px 14px;margin:8px 0">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
           <div onclick="toggleAccStat('${a.u}')" style="cursor:pointer;flex:1;min-width:0">
             <b style="font-size:1.05em">${esc(a.u)}</b>
-            <small style="display:block;color:var(--mu);margin-top:2px">${esc(fmtLast(a))}</small>
+            <small style="display:block;color:var(--mu);margin-top:2px">${esc(fmtLast(a)+typeBadge(a))}</small>
           </div>
           <div style="display:flex;gap:6px;flex:none">
             <button class="btn2 sm" title="Fortschritt & Aktivität" onclick="toggleAccStat('${a.u}')">${stOpen?"▾":"▸"}</button>
@@ -1735,11 +1875,12 @@ function set(){
 
         ${stOpen?`
         <div style="margin-top:10px;padding-top:10px;border-top:1px solid var(--bd);font-size:.9em">
-          <div style="margin-bottom:8px">
+          <div style="margin-bottom:${ns?0:8}px">
             <small style="color:var(--mu);text-transform:uppercase;letter-spacing:.05em;font-size:.76em;font-weight:600">Zuletzt gemacht</small>
             <div style="margin-top:2px">${lastAct?`<b>${esc(lastAct.txt)}</b> <small style="color:var(--mu)">(${esc(fmtRelTime(lastAct.t))})</small>`:`<span style="color:var(--mu)">Noch keine Übung abgeschlossen</span>`}</div>
           </div>
 
+          ${ns?`<p class="sub" style="margin:6px 0 0;font-size:.86em">Für diesen Konto-Typ (${accType(a)==="guest"?"Gastzugang":"Keine Sicherung"}) werden kein Fortschritt und keine Farben gespeichert.</p>`:`
           <small style="color:var(--mu);text-transform:uppercase;letter-spacing:.05em;font-size:.76em;font-weight:600">Vokabeltrainer (${stats.vTot} Vokabeln)</small>
           <div style="margin:3px 0 8px">
             <div>S→D: <b>${stats.vSdPct} %</b> <small style="color:var(--mu)">(${stats.vSd}/${stats.vTot})</small></div>
@@ -1758,7 +1899,7 @@ function set(){
           <small style="color:var(--mu);text-transform:uppercase;letter-spacing:.05em;font-size:.76em;font-weight:600">Nach Unidad</small>
           <div style="margin-top:3px;color:var(--mu);font-size:.86em">
             ${stats.units.map(u=>`<div><b style="color:var(--fg);font-weight:600">${esc(u.n)}:</b> S→D ${u.sd} % · D→S ${u.ds} %</div>`).join("")}
-          </div>`:""}
+          </div>`:""}`}
         </div>`:""}
 
         ${cfgOpen?`
@@ -1777,9 +1918,41 @@ function set(){
     }).join("") : `<p class="sub">Noch keine Konten.</p>`;
 
     h+=`<h2>Neues Konto anlegen</h2>
-    <div class="login" style="margin-top:8px">
-      <input id="nu" placeholder="Neuer Benutzername" autocapitalize="off" autocorrect="off">
-      <input id="np" type="text" placeholder="Passwort (mind. 6 Zeichen)" autocapitalize="off" autocorrect="off">
+    <div class="seg" style="margin:6px 0 8px">
+      <button type="button" class="${NEW_TYPE=="perm"?"on":""}" onclick="setNewType('perm')">Permanent</button>
+      <button type="button" style="margin-left:-1px" class="${NEW_TYPE=="nosave"?"on":""}" onclick="setNewType('nosave')">Keine Sicherung</button>
+      <button type="button" style="margin-left:-1px" class="${NEW_TYPE=="guest"?"on":""}" onclick="setNewType('guest')">Gast</button>
+    </div>
+    <p class="sub" style="margin-top:0">
+      ${NEW_TYPE=="perm"?"Speichert Lernfortschritt und Farbpalette dauerhaft in Supabase."
+       :NEW_TYPE=="nosave"?"Dauerhaftes Konto ohne Speicherung von Fortschritt oder Farben."
+       :"Temporärer Zugang ohne Speicherung – wird nach Ablauf automatisch gelöscht."}
+    </p>
+    ${NEW_TYPE=="guest"?`
+    <div style="margin:6px 0 10px">
+      <small style="display:block;color:var(--mu);margin-bottom:4px;font-weight:600">Gültigkeitsdauer des Gastzugangs</small>
+      <select id="gdur" onchange="setGDur(this.value)" style="width:100%;box-sizing:border-box;font:inherit;padding:10px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--c);color:var(--fg)">
+        <option value="15" ${G_DUR=="15"?"selected":""}>15 Minuten</option>
+        <option value="60" ${G_DUR=="60"?"selected":""}>1 Stunde</option>
+        <option value="180" ${G_DUR=="180"?"selected":""}>3 Stunden</option>
+        <option value="1440" ${G_DUR=="1440"?"selected":""}>24 Stunden (1 Tag)</option>
+        <option value="4320" ${G_DUR=="4320"?"selected":""}>3 Tage</option>
+        <option value="10080" ${G_DUR=="10080"?"selected":""}>7 Tage</option>
+        <option value="custom" ${G_DUR=="custom"?"selected":""}>Eigene Zeit festlegen …</option>
+      </select>
+      ${G_DUR=="custom"?`
+      <div class="row" style="margin:8px 0 0">
+        <input id="gcval" type="number" min="1" value="${esc(G_CVAL)}" oninput="G_CVAL=this.value" placeholder="Anzahl">
+        <select id="gcunit" onchange="G_CUNIT=this.value" style="flex:1;box-sizing:border-box;font:inherit;padding:10px 12px;border:1px solid var(--bd);border-radius:10px;background:var(--c);color:var(--fg)">
+          <option value="1" ${G_CUNIT=="1"?"selected":""}>Minuten</option>
+          <option value="60" ${G_CUNIT=="60"?"selected":""}>Stunden</option>
+          <option value="1440" ${G_CUNIT=="1440"?"selected":""}>Tage</option>
+        </select>
+      </div>`:""}
+    </div>`:""}
+    <div class="login" style="margin-top:6px">
+      <input id="nu" value="${esc(NU_VAL)}" oninput="NU_VAL=this.value" placeholder="Neuer Benutzername" autocapitalize="off" autocorrect="off">
+      <input id="np" type="text" value="${esc(NP_VAL)}" oninput="NP_VAL=this.value" placeholder="Passwort (mind. 6 Zeichen)" autocapitalize="off" autocorrect="off">
       <button class="lnk" onclick="genPw('np')">Passwort erzeugen</button>
       <button class="btn" onclick="addAcc()">Konto anlegen</button>
     </div>
@@ -1788,12 +1961,16 @@ function set(){
     return h;
   }
 
-  h+=`<h2>Anmeldung</h2><div class="card"><b>Konto „${esc(M.u)}“</b><span>Fortschritt & Farben werden automatisch mit Supabase synchronisiert</span></div>`;
+  h+=`<h2>Anmeldung</h2><div class="card"><b>Konto „${esc(M.u)}“</b><span>${
+    tMe==="guest"?"Gastzugang (läuft ab: "+fmtExpTime(me.state&&me.state.exp)+") · Keine Speicherung"
+    :noSave?"Keine Speicherung von Fortschritt & Farben"
+    :"Fortschritt & Farben werden automatisch mit Supabase synchronisiert"
+  }</span></div>`;
   h+=`<button class="btn2" onclick="logout()">Abmelden</button>`;
   h+=`<h2>Anderes Konto</h2>${lf()}`;
 
   h+=`<h2>Farbpalette</h2>
-  <p class="sub">Wähle eine Vorlage oder passe jede Farbe einzeln an.</p>
+  <p class="sub">${noSave?"Hinweis: Bei diesem Konto werden Farbänderungen nur temporär angezeigt und nicht gespeichert.":"Wähle eine Vorlage oder passe jede Farbe einzeln an."}</p>
   <div style="margin-bottom:10px">
     <button class="btn2 sm" style="margin:0 6px 6px 0" onclick="setPreset('')">System-Standard</button>
     <button class="btn2 sm" style="margin:0 6px 6px 0" onclick="setPreset('light')">Hell</button>
